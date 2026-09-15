@@ -79,6 +79,12 @@ test("核心App壳文件都被加入了离线缓存清单(防止忘记加新文�
   mustHave.forEach((f) => assert.ok(list.includes(f), "核心文件没有加入离线缓存清单: " + f));
 });
 
+test("service-worker.js 不再用 cache.addAll 整体缓存(一个文件失败就全部作废的脆弱写法)", () => {
+  const sw = fs.readFileSync(path.join(APP_DIR, "service-worker.js"), "utf8");
+  assert.doesNotMatch(sw, /cache\.addAll\(\s*SHELL_FILES\s*\)/, "install阶段不应该用cache.addAll(SHELL_FILES),单个文件失败会导致整批缓存失败");
+  assert.match(sw, /cache\.put\(/, "应该逐个用cache.put缓存,单个失败不会牵连其他文件");
+});
+
 test("service-worker.js 对API请求直接放行,不拦截缓存", () => {
   const sw = fs.readFileSync(path.join(APP_DIR, "service-worker.js"), "utf8");
   assert.match(sw, /api\.carrismetropolitana\.pt/, "service worker里应该有针对API域名的放行逻辑");

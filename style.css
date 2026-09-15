@@ -257,6 +257,17 @@
     font-size:13px;
   }
 
+  .stale-banner{
+    background: #FBEAEA;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+
   /* Board — folha corrida, sem cartão/sombra: cada linha separada por um traço fino */
   .board{
     border-top: 1px solid var(--rule);

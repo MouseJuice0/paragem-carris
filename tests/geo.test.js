@@ -75,3 +75,22 @@ test("classifyFetchError: 非HTTP错误(比如断网)归类为网络问题", () 
   assert.equal(r.isServerError, false);
   assert.match(r.explanation, /ligação/);
 });
+
+// ---------- formatAgo ----------
+
+test("formatAgo: 60秒以内显示秒数", () => {
+  assert.equal(lib.formatAgo(0), "há 0s");
+  assert.equal(lib.formatAgo(45), "há 45s");
+  assert.equal(lib.formatAgo(59.4), "há 59s");
+});
+
+test("formatAgo: 60秒及以上显示分钟数(四舍五入)", () => {
+  assert.equal(lib.formatAgo(60), "há 1 min");
+  assert.equal(lib.formatAgo(89), "há 1 min");
+  assert.equal(lib.formatAgo(91), "há 2 min");
+  assert.equal(lib.formatAgo(600), "há 10 min");
+});
+
+test("formatAgo: 负数不崩溃,当作0处理", () => {
+  assert.equal(lib.formatAgo(-5), "há 0s");
+});

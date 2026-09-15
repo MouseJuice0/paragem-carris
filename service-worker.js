@@ -17,7 +17,21 @@ const SHELL_FILES = [
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll(SHELL_FILES);
+      // 逐个缓存,而不是把整个清单一次性交给 addAll ——
+      // 那种写法是"全部成功才算数",手机网络上一个文件抖一下就整批作废,
+      // 导致缓存一直建不起来,每次打开都要重新下载全部资源。
+      return Promise.all(
+        SHELL_FILES.map(function (url) {
+          return fetch(url)
+            .then(function (res) {
+              if (res && res.ok) return cache.put(url, res);
+            })
+            .catch(function () {
+              // 这一个文件失败就跳过,不连累其他文件——下次fetch时的
+              // stale-while-revalidate逻辑还会再试着把它补上
+            });
+        })
+      );
     })
   );
   self.skipWaiting();

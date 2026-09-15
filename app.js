@@ -21,9 +21,12 @@
   var LS_LAST_STOP = "paragem:lastStop";
   var LS_TARGETS = "paragem:targets";
   var LS_RECENTS = "paragem:recents";
+  var LS_ARRIVALS_PREFIX = "paragem:arrivals:";
+  var LS_PATTERNS = "paragem:patterns";
 
   var els = {
     board: document.getElementById("board"),
+    staleBanner: document.getElementById("staleBanner"),
     updatedAt: document.getElementById("updatedAt"),
     refreshBtn: document.getElementById("refreshBtn"),
     liveDot: document.getElementById("liveDot"),
@@ -48,6 +51,7 @@
   var tickTimer = null;
   var lastData = [];
   var lastFetchTime = null;
+  var isShowingStale = false; // 当前展示的是不是"上次成功拿到的旧数据"(实时刷新失败时的兜底)
 
   var STOPS_INDEX = null;   // 全量可搜索站点索引(异步加载)
   var currentStop = null;   // { id, name }
@@ -72,6 +76,26 @@
   }
   function saveRecents(list){
     try { localStorage.setItem(LS_RECENTS, JSON.stringify(list)); } catch(e){}
+  }
+
+  function loadCachedArrivals(stopId){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_ARRIVALS_PREFIX + stopId), null);
+  }
+  function saveCachedArrivals(stopId, data){
+    try {
+      localStorage.setItem(LS_ARRIVALS_PREFIX + stopId, JSON.stringify({ data: data, fetchedAt: Date.now() }));
+    } catch(e){}
+  }
+
+  function loadPersistedPatterns(){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_PATTERNS), {});
+  }
+  function savePersistedPatterns(map){
+    var clean = {};
+    Object.keys(map).forEach(function(k){
+      if(map[k]) clean[k] = map[k]; // 只存真正成功解析过的,失败的null不写进去——
+    });                              // 否则一次性网络失败会被永久当成"确认经过/不经过"
+    try { localStorage.setItem(LS_PATTERNS, JSON.stringify(clean)); } catch(e){}
   }
 
   function currentTarget(){
@@ -259,10 +283,23 @@
     if(pollTimer) clearTimeout(pollTimer);
     if(userTriggered){
       els.refreshBtn.classList.add("spinning");
-      els.board.innerHTML = '<div class="state">A carregar horários…</div>';
     }
 
     var stopId = currentStop.id;
+    var cached = loadCachedArrivals(stopId);
+
+    if(cached && cached.data && cached.data.length){
+      // 先把上次成功拿到的数据立刻画出来,不用干等网络——
+      // 这是"每次打开都要等"这个问题的关键修复
+      lastData = cached.data;
+      lastFetchTime = cached.fetchedAt;
+      isShowingStale = true;
+      hideStaleBanner();
+      renderBoard();
+      updateFooter();
+    } else {
+      els.board.innerHTML = '<div class="state">A carregar horários…</div>';
+    }
 
     fetch(API_BASE + "/pips/estimates", {
       method: "POST",
@@ -277,12 +314,21 @@
       setLive(true);
       lastFetchTime = Date.now();
       lastData = ParagemLib.filterAndSortEstimates(data, 8);
+      isShowingStale = false;
+      saveCachedArrivals(stopId, lastData);
+      hideStaleBanner();
       renderBoard();
       updateFooter();
     })
     .catch(function(err){
       setLive(false);
-      renderError(err);
+      if(cached && cached.data && cached.data.length){
+        // 官方接口本身会掉(500/504),但没必要把界面也清空——
+        // 保留上次成功的数据,只是明确告诉用户"这可能不是最新的"
+        showStaleBanner(err, cached.fetchedAt);
+      } else {
+        renderError(err);
+      }
     })
     .finally(function(){
       els.refreshBtn.classList.remove("spinning");
@@ -290,9 +336,21 @@
     });
   }
 
+  function showStaleBanner(err, cachedFetchedAt){
+    var ago = ParagemLib.formatAgo((Date.now() - cachedFetchedAt) / 1000);
+    var info = ParagemLib.classifyFetchError(err && err.message ? err.message : "");
+    els.staleBanner.hidden = false;
+    els.staleBanner.textContent = "Não foi possível atualizar agora — a mostrar dados de " + ago + ". " + info.explanation;
+  }
+
+  function hideStaleBanner(){
+    els.staleBanner.hidden = true;
+  }
+
   function renderError(err){
     var msg = err && err.message ? err.message : "erro de rede";
     var info = ParagemLib.classifyFetchError(msg);
+    hideStaleBanner();
     els.board.innerHTML =
       '<div class="state error">Não foi possível obter os horários.<br>' +
       '<span style="color:var(--muted); font-size:12px;">' + escapeHtml(info.explanation) + ' (' + escapeHtml(msg) + ')</span>' +
@@ -327,7 +385,7 @@
   // ---- 终点/途经解析:同一站台常有多条线路,各自开往完全不同的方向
   // (比如往Cacilhas、往里斯本Sete Rios的车,可能根本不经过你要去的目标站)。
   // 用 pattern 的完整路径(而不只是终点)判断某班车是否真的会到你配置的目标站。 ----
-  var patternCache = {}; // patternId -> { terminusId, pathIds } | null(请求失败)
+  var patternCache = loadPersistedPatterns(); // patternId -> { terminusId, pathIds } | null(请求失败,不持久化失败结果)
 
   function resolveTermini(){
     var rows = els.board.querySelectorAll(".row[data-pattern]");
@@ -346,10 +404,11 @@
         .then(function(data){
           var info = ParagemLib.extractPatternInfo(data);
           patternCache[pid] = info;
+          savePersistedPatterns(patternCache); // 存下来,下次打开App不用重新问一遍这条线路的路径
           applyTerminus(pid);
         })
         .catch(function(){
-          patternCache[pid] = null;
+          patternCache[pid] = null; // 只在这次会话里记住失败,不写入localStorage——下次开App会重试
           applyTerminus(pid);
         });
     });
@@ -413,15 +472,11 @@
 
   function updateFooter(){
     if(!lastFetchTime) return;
-    var secs = Math.round((Date.now() - lastFetchTime)/1000);
-    els.updatedAt.textContent = "atualizado há " + secs + "s";
+    var secs = (Date.now() - lastFetchTime) / 1000;
+    var prefix = isShowingStale ? "dados de " : "atualizado ";
+    els.updatedAt.textContent = prefix + ParagemLib.formatAgo(secs);
   }
-  setInterval(function(){
-    if(lastFetchTime){
-      var secs = Math.round((Date.now() - lastFetchTime)/1000);
-      els.updatedAt.textContent = "atualizado há " + secs + "s";
-    }
-  }, 1000);
+  setInterval(updateFooter, 1000);
 
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){

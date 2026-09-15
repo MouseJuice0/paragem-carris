@@ -211,6 +211,17 @@
     };
   }
 
+  /**
+   * 把"多少秒之前"换算成简短的展示文案,统一用在页脚和"数据可能过期"提示条上。
+   * @param {number} seconds
+   */
+  function formatAgo(seconds) {
+    seconds = Math.max(0, Math.round(seconds));
+    if (seconds < 60) return "há " + seconds + "s";
+    var mins = Math.round(seconds / 60);
+    return "há " + mins + " min";
+  }
+
   return {
     filterAndSortEstimates: filterAndSortEstimates,
     formatEta: formatEta,
@@ -224,6 +235,7 @@
     resolveTarget: resolveTarget,
     haversineKm: haversineKm,
     sortStopsByDistance: sortStopsByDistance,
-    classifyFetchError: classifyFetchError
+    classifyFetchError: classifyFetchError,
+    formatAgo: formatAgo
   };
 });
