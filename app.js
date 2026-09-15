@@ -21,6 +21,7 @@
   var LS_LAST_STOP = "paragem:lastStop";
   var LS_TARGETS = "paragem:targets";
   var LS_RECENTS = "paragem:recents";
+  var LS_FAVORITES = "paragem:favorites";
   var LS_ARRIVALS_PREFIX = "paragem:arrivals:";
   var LS_PATTERNS = "paragem:patterns";
 
@@ -35,6 +36,8 @@
     stopCurrentBtn: document.getElementById("stopCurrentBtn"),
     stopCurrentName: document.getElementById("stopCurrentName"),
     stopCurrentIdLabel: document.getElementById("stopCurrentIdLabel"),
+    favToggleBtn: document.getElementById("favToggleBtn"),
+    favoritesRow: document.getElementById("favoritesRow"),
 
     targetChipBtn: document.getElementById("targetChipBtn"),
     targetClearBtn: document.getElementById("targetClearBtn"),
@@ -56,6 +59,8 @@
   var STOPS_INDEX = null;   // 全量可搜索站点索引(异步加载)
   var currentStop = null;   // { id, name }
   var searchMode = null;    // "origin" | "target"
+  var viewingNearby = false;      // 搜索面板当前展示的是不是"附近站点"结果
+  var lastNearbyResults = null;   // 附近站点的原始结果,切换收藏后原地刷新用,不用重新定位
 
   // ---------------- localStorage 读写(全部经过 safeParseJSON,坏数据不会崩App) ----------------
 
@@ -76,6 +81,13 @@
   }
   function saveRecents(list){
     try { localStorage.setItem(LS_RECENTS, JSON.stringify(list)); } catch(e){}
+  }
+
+  function loadFavorites(){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_FAVORITES), []);
+  }
+  function saveFavorites(list){
+    try { localStorage.setItem(LS_FAVORITES, JSON.stringify(list)); } catch(e){}
   }
 
   function loadCachedArrivals(stopId){
@@ -112,6 +124,12 @@
     els.stopCurrentBtn.addEventListener("click", function(){ openSearch("origin"); });
     els.targetChipBtn.addEventListener("click", function(){ openSearch("target"); });
     els.targetClearBtn.addEventListener("click", clearCurrentTarget);
+    els.favToggleBtn.addEventListener("click", function(){ toggleFavoriteStop(currentStop); });
+    els.favoritesRow.addEventListener("click", function(e){
+      var chip = e.target.closest(".fav-chip");
+      if(!chip) return;
+      selectOriginStop({ id: chip.getAttribute("data-id"), name: chip.getAttribute("data-name") });
+    });
 
     els.searchCloseBtn.addEventListener("click", closeSearch);
     els.searchOverlay.addEventListener("click", function(e){
@@ -122,6 +140,12 @@
     });
     els.nearbyBtn.addEventListener("click", useMyLocation);
     els.searchList.addEventListener("click", function(e){
+      var star = e.target.closest(".fav-star");
+      if(star){
+        var favStop = { id: star.getAttribute("data-id"), name: star.getAttribute("data-name") };
+        toggleFavoriteStop(favStop);
+        return;
+      }
       var row = e.target.closest(".search-row");
       if(!row) return;
       var stop = { id: row.getAttribute("data-id"), name: row.getAttribute("data-name") };
@@ -153,6 +177,12 @@
     els.stopCurrentName.textContent = currentStop.name;
     els.stopCurrentIdLabel.textContent = "#" + currentStop.id;
 
+    var favs = loadFavorites();
+    var isFav = ParagemLib.isFavorite(favs, currentStop.id);
+    els.favToggleBtn.textContent = isFav ? "★" : "☆";
+    els.favToggleBtn.classList.toggle("active", isFav);
+    els.favToggleBtn.setAttribute("aria-label", isFav ? "Remover dos favoritos" : "Adicionar aos favoritos");
+
     var target = currentTarget();
     if(target){
       els.targetChipBtn.textContent = "chega a " + target.name + " · #" + target.id;
@@ -162,6 +192,36 @@
       els.targetChipBtn.textContent = "+ definir destino (opcional)";
       els.targetChipBtn.classList.remove("set");
       els.targetClearBtn.hidden = true;
+    }
+
+    renderFavoritesRow();
+  }
+
+  function renderFavoritesRow(){
+    var favs = loadFavorites();
+    if(favs.length === 0){
+      els.favoritesRow.hidden = true;
+      els.favoritesRow.innerHTML = "";
+      return;
+    }
+    els.favoritesRow.hidden = false;
+    els.favoritesRow.innerHTML = favs.map(function(f){
+      var active = currentStop && currentStop.id === f.id ? " active" : "";
+      return (
+        '<button class="fav-chip' + active + '" type="button" data-id="' + escapeHtml(f.id) + '" data-name="' + escapeHtml(f.name) + '">' +
+          escapeHtml(f.name) +
+        '</button>'
+      );
+    }).join("");
+  }
+
+  function toggleFavoriteStop(stop){
+    var updated = ParagemLib.toggleFavorite(loadFavorites(), stop);
+    saveFavorites(updated);
+    renderStopBar();
+    // 如果正在搜索面板里给这个站点点星标,顺便把面板里的星标状态也同步一下
+    if(!els.searchOverlay.hidden){
+      refreshSearchView();
     }
   }
 
@@ -208,12 +268,16 @@
   }
 
   function renderSearchResults(query){
+    viewingNearby = false;
     var q = query.trim();
     var list;
 
     if(!q){
-      list = loadRecents();
-      els.searchHint.textContent = list.length ? "recentes" : "escreva para procurar entre " + (STOPS_INDEX ? STOPS_INDEX.length : "milhares de") + " paragens, ou use a localização";
+      var favs = loadFavorites();
+      var favIds = favs.map(function(f){ return f.id; });
+      var recentsOnly = loadRecents().filter(function(r){ return favIds.indexOf(r.id) === -1; });
+      list = favs.concat(recentsOnly);
+      els.searchHint.textContent = list.length ? "favoritos e recentes" : "escreva para procurar entre " + (STOPS_INDEX ? STOPS_INDEX.length : "milhares de") + " paragens, ou use a localização";
     } else if(!STOPS_INDEX){
       list = [];
       els.searchHint.textContent = "a carregar índice de paragens…";
@@ -223,6 +287,14 @@
     }
 
     renderStopRows(list.map(function(s){ return { id: s.id, name: s.name, meta: "#" + s.id }; }));
+  }
+
+  function refreshSearchView(){
+    if(viewingNearby && lastNearbyResults){
+      renderNearbyList();
+    } else {
+      renderSearchResults(els.searchInput.value);
+    }
   }
 
   function useMyLocation(){
@@ -239,17 +311,22 @@
           els.searchHint.textContent = "índice de paragens ainda a carregar, tente outra vez em instantes";
           return;
         }
-        var nearby = ParagemLib.sortStopsByDistance(STOPS_INDEX, pos.coords.latitude, pos.coords.longitude, 20);
-        els.searchHint.textContent = "mais perto de si";
-        renderStopRows(nearby.map(function(s){
-          return { id: s.id, name: s.name, meta: formatDistance(s.distanceKm) };
-        }));
+        lastNearbyResults = ParagemLib.sortStopsByDistance(STOPS_INDEX, pos.coords.latitude, pos.coords.longitude, 20);
+        viewingNearby = true;
+        renderNearbyList();
       },
       function(err){
         els.searchHint.textContent = "não foi possível obter localização (" + (err && err.message ? err.message : "permissão negada") + ")";
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
+  }
+
+  function renderNearbyList(){
+    els.searchHint.textContent = "mais perto de si";
+    renderStopRows(lastNearbyResults.map(function(s){
+      return { id: s.id, name: s.name, meta: formatDistance(s.distanceKm) };
+    }));
   }
 
   function formatDistance(km){
@@ -262,10 +339,13 @@
       els.searchList.innerHTML = '<div class="search-empty">Sem paragens encontradas.</div>';
       return;
     }
+    var favs = loadFavorites();
     els.searchList.innerHTML = list.map(function(s){
+      var isFav = ParagemLib.isFavorite(favs, s.id);
       return (
         '<div class="search-row" data-id="' + escapeHtml(s.id) + '" data-name="' + escapeHtml(s.name) + '">' +
           '<span class="search-row-name">' + escapeHtml(s.name) + '</span>' +
+          '<button class="fav-star' + (isFav ? ' active' : '') + '" type="button" data-id="' + escapeHtml(s.id) + '" data-name="' + escapeHtml(s.name) + '" aria-label="Favoritar">' + (isFav ? '★' : '☆') + '</button>' +
           '<span class="search-row-meta">' + escapeHtml(s.meta) + '</span>' +
         '</div>'
       );

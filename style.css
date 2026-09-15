@@ -71,10 +71,56 @@
 
   /* Stop picker */
   .stop-bar{
+    display:flex;
+    align-items:stretch;
+    gap:8px;
     margin-bottom: 8px;
   }
+  .fav-toggle{
+    flex: 0 0 auto;
+    width: 44px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 18px;
+    cursor:pointer;
+  }
+  .fav-toggle.active{
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .favorites-row{
+    display:flex;
+    gap:8px;
+    overflow-x:auto;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+  }
+  .fav-chip{
+    flex: 0 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor:pointer;
+  }
+  .fav-chip.active{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
   .stop-current{
-    width:100%;
+    flex: 1;
+    min-width: 0;
     display:flex;
     align-items:center;
     justify-content:space-between;
@@ -239,11 +285,22 @@
   .search-row:last-child{ border-bottom:none; }
   .search-row:active{ background: var(--bg); }
   .search-row-name{
+    flex: 1 1 auto;
     font-size:14px;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
   }
+  .fav-star{
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    color: var(--rule);
+    font-size: 16px;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+  .fav-star.active{ color: var(--accent); }
   .search-row-meta{
     flex:0 0 auto;
     font-size:10px;

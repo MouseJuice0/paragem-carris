@@ -222,6 +222,27 @@
     return "há " + mins + " min";
   }
 
+  /**
+   * 切换某个站点的收藏状态:已收藏就移除,没收藏就加进去(追加到末尾,不去重复插入)。
+   * @param {Array<{id:string}>} list
+   * @param {{id:string,name:string}} item
+   */
+  function toggleFavorite(list, item) {
+    var base = Array.isArray(list) ? list : [];
+    var exists = base.some(function (x) { return x && x.id === item.id; });
+    if (exists) {
+      return base.filter(function (x) { return x.id !== item.id; });
+    }
+    return base.concat([item]);
+  }
+
+  /**
+   * 判断某个站点id是否在收藏列表里。
+   */
+  function isFavorite(list, id) {
+    return Array.isArray(list) && list.some(function (x) { return x && x.id === id; });
+  }
+
   return {
     filterAndSortEstimates: filterAndSortEstimates,
     formatEta: formatEta,
@@ -236,6 +257,8 @@
     haversineKm: haversineKm,
     sortStopsByDistance: sortStopsByDistance,
     classifyFetchError: classifyFetchError,
-    formatAgo: formatAgo
+    formatAgo: formatAgo,
+    toggleFavorite: toggleFavorite,
+    isFavorite: isFavorite
   };
 });
