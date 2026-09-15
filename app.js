@@ -1,26 +1,9 @@
 (function(){
 
-  // ---- 预置站点(Quinta do Conde区域,按覆盖线路数排序) ----
-  var STOPS = [
-    { id: "150018", name: "Av. Principal, 26C" },
-    { id: "150026", name: "Av. Liberdade (Farmácia)" },
-    { id: "150021", name: "Av. Principal, 2594" },
-    { id: "150049", name: "Av. Liberdade, 35" },
-    { id: "150015", name: "R. Glória (Correios)" },
-    { id: "150009", name: "EN10 (Posto Abast.) · sentido Coina" },
-    { id: "150001", name: "EN10 (Posto Abast.) · sentido Qta Conde" },
-    { id: "150003", name: "EN10 (Parque da Vila)" },
-    { id: "150013", name: "R. Norton de Matos (Parque da Vila)" },
-    { id: "150496", name: "Av. Aliados" },
-    { id: "150519", name: "Av. 1º de Maio" },
-    { id: "150551", name: "Av. Cova dos Vidros (J. Freguesia)" },
-    { id: "150611", name: "Centro de Saúde da Quinta do Conde" }
-  ];
-
-  // ---- 目标站点配置:针对某个出发站,你实际想到达的终点/沿途站。
-  // 有配置的话,每班车会标注"是否真的经过这一站",而不是只显示线路终点。
-  var STOP_TARGETS = {
-    "150009": { id: "142335", name: "Coina (Estação)" }
+  // ---- 首次使用时的种子默认值(之后一律以localStorage里用户自己的选择为准) ----
+  var SEED_DEFAULT_STOP = { id: "150009", name: "QTA CONDE (EN10) POSTO ABASTECIMENTO" };
+  var SEED_TARGETS = {
+    "150009": { id: "142335", name: "Coina (Estação) P0" }
   };
 
   // ---- 线路品牌色(取自 Carris Metropolitana /v2/lines,未知线路用主红色兜底) ----
@@ -35,14 +18,29 @@
   var POLL_MS = 25000;
   var TICK_MS = 1000;
 
+  var LS_LAST_STOP = "paragem:lastStop";
+  var LS_TARGETS = "paragem:targets";
+  var LS_RECENTS = "paragem:recents";
+
   var els = {
-    select: document.getElementById("stopSelect"),
     board: document.getElementById("board"),
-    state: document.getElementById("state"),
     updatedAt: document.getElementById("updatedAt"),
     refreshBtn: document.getElementById("refreshBtn"),
     liveDot: document.getElementById("liveDot"),
-    liveLabel: document.getElementById("liveLabel")
+    liveLabel: document.getElementById("liveLabel"),
+
+    stopCurrentBtn: document.getElementById("stopCurrentBtn"),
+    stopCurrentName: document.getElementById("stopCurrentName"),
+    stopCurrentIdLabel: document.getElementById("stopCurrentIdLabel"),
+
+    targetChipBtn: document.getElementById("targetChipBtn"),
+    targetClearBtn: document.getElementById("targetClearBtn"),
+
+    searchOverlay: document.getElementById("searchOverlay"),
+    searchInput: document.getElementById("searchInput"),
+    searchCloseBtn: document.getElementById("searchCloseBtn"),
+    searchHint: document.getElementById("searchHint"),
+    searchList: document.getElementById("searchList")
   };
 
   var pollTimer = null;
@@ -50,30 +48,170 @@
   var lastData = [];
   var lastFetchTime = null;
 
-  var DEFAULT_STOP_ID = "150009"; // 用户实际常坐的站(往Coina方向那一侧):QTA CONDE (EN10) POSTO ABASTECIMENTO
+  var STOPS_INDEX = null;   // 全量可搜索站点索引(异步加载)
+  var currentStop = null;   // { id, name }
+  var searchMode = null;    // "origin" | "target"
+
+  // ---------------- localStorage 读写(全部经过 safeParseJSON,坏数据不会崩App) ----------------
+
+  function loadLastStop(){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_LAST_STOP), null);
+  }
+  function saveLastStop(stop){
+    try { localStorage.setItem(LS_LAST_STOP, JSON.stringify(stop)); } catch(e){}
+  }
+  function loadTargets(){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_TARGETS), {});
+  }
+  function saveTargets(map){
+    try { localStorage.setItem(LS_TARGETS, JSON.stringify(map)); } catch(e){}
+  }
+  function loadRecents(){
+    return ParagemLib.safeParseJSON(localStorage.getItem(LS_RECENTS), []);
+  }
+  function saveRecents(list){
+    try { localStorage.setItem(LS_RECENTS, JSON.stringify(list)); } catch(e){}
+  }
+
+  function currentTarget(){
+    if(!currentStop) return null;
+    return ParagemLib.resolveTarget(loadTargets(), currentStop.id, SEED_TARGETS);
+  }
+
+  // ---------------- 初始化 ----------------
 
   function init(){
-    STOPS.forEach(function(s){
-      var opt = document.createElement("option");
-      opt.value = s.id;
-      opt.textContent = s.name + " · #" + s.id;
-      els.select.appendChild(opt);
-    });
-    els.select.value = DEFAULT_STOP_ID;
+    currentStop = ParagemLib.resolveInitialStop(loadLastStop(), SEED_DEFAULT_STOP);
+    renderStopBar();
 
-    els.select.addEventListener("change", function(){
-      loadArrivals(true);
+    els.stopCurrentBtn.addEventListener("click", function(){ openSearch("origin"); });
+    els.targetChipBtn.addEventListener("click", function(){ openSearch("target"); });
+    els.targetClearBtn.addEventListener("click", clearCurrentTarget);
+
+    els.searchCloseBtn.addEventListener("click", closeSearch);
+    els.searchOverlay.addEventListener("click", function(e){
+      if(e.target === els.searchOverlay) closeSearch();
     });
-    els.refreshBtn.addEventListener("click", function(){
-      loadArrivals(true);
+    els.searchInput.addEventListener("input", function(){
+      renderSearchResults(els.searchInput.value);
+    });
+    els.searchList.addEventListener("click", function(e){
+      var row = e.target.closest(".search-row");
+      if(!row) return;
+      var stop = { id: row.getAttribute("data-id"), name: row.getAttribute("data-name") };
+      if(searchMode === "origin"){
+        selectOriginStop(stop);
+      } else if(searchMode === "target"){
+        selectTargetStop(stop);
+      }
+      closeSearch();
     });
 
-    document.querySelector(".note").innerHTML =
-      document.querySelector(".note").innerHTML.replace("{{n}}", STOPS.length);
+    els.refreshBtn.addEventListener("click", function(){ loadArrivals(true); });
 
+    loadStopsIndex();
     loadArrivals(true);
     tickTimer = setInterval(renderCountdownsOnly, TICK_MS);
   }
+
+  function loadStopsIndex(){
+    fetch("stops-index.json")
+      .then(function(res){ if(!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+      .then(function(data){ STOPS_INDEX = data; })
+      .catch(function(err){ console.warn("Não foi possível carregar o índice de paragens:", err); });
+  }
+
+  // ---------------- 出发站 / 目标站 选择 ----------------
+
+  function renderStopBar(){
+    els.stopCurrentName.textContent = currentStop.name;
+    els.stopCurrentIdLabel.textContent = "#" + currentStop.id;
+
+    var target = currentTarget();
+    if(target){
+      els.targetChipBtn.textContent = "chega a " + target.name + " · #" + target.id;
+      els.targetChipBtn.classList.add("set");
+      els.targetClearBtn.hidden = false;
+    } else {
+      els.targetChipBtn.textContent = "+ definir destino (opcional)";
+      els.targetChipBtn.classList.remove("set");
+      els.targetClearBtn.hidden = true;
+    }
+  }
+
+  function selectOriginStop(stop){
+    currentStop = stop;
+    saveLastStop(stop);
+    saveRecents(ParagemLib.upsertRecent(loadRecents(), stop, 8));
+    renderStopBar();
+    loadArrivals(true);
+  }
+
+  function selectTargetStop(stop){
+    var map = loadTargets();
+    map[currentStop.id] = stop;
+    saveTargets(map);
+    renderStopBar();
+    resolveTermini(); // 用新目标重新判断已经拉到的班次,不用重新拉取到站数据
+  }
+
+  function clearCurrentTarget(){
+    var map = loadTargets();
+    map[currentStop.id] = null; // 显式记为"已清除",不是删掉key——避免又被种子默认值盖回来
+    saveTargets(map);
+    renderStopBar();
+    resolveTermini();
+  }
+
+  // ---------------- 搜索面板 ----------------
+
+  function openSearch(mode){
+    searchMode = mode;
+    els.searchInput.value = "";
+    els.searchOverlay.hidden = false;
+    els.searchInput.placeholder = mode === "target"
+      ? "Procurar paragem de destino…"
+      : "Procurar paragem por nome…";
+    renderSearchResults("");
+    setTimeout(function(){ els.searchInput.focus(); }, 50);
+  }
+
+  function closeSearch(){
+    els.searchOverlay.hidden = true;
+    searchMode = null;
+  }
+
+  function renderSearchResults(query){
+    var q = query.trim();
+    var list;
+
+    if(!q){
+      list = loadRecents();
+      els.searchHint.textContent = list.length ? "recentes" : "escreva para procurar entre " + (STOPS_INDEX ? STOPS_INDEX.length : "milhares de") + " paragens";
+    } else if(!STOPS_INDEX){
+      list = [];
+      els.searchHint.textContent = "a carregar índice de paragens…";
+    } else {
+      list = ParagemLib.searchStops(STOPS_INDEX, q, 30);
+      els.searchHint.textContent = list.length + " resultado(s)";
+    }
+
+    if(list.length === 0){
+      els.searchList.innerHTML = '<div class="search-empty">Sem paragens encontradas.</div>';
+      return;
+    }
+
+    els.searchList.innerHTML = list.map(function(s){
+      return (
+        '<div class="search-row" data-id="' + escapeHtml(s.id) + '" data-name="' + escapeHtml(s.name) + '">' +
+          '<span class="search-row-name">' + escapeHtml(s.name) + '</span>' +
+          '<span class="search-row-meta">#' + escapeHtml(s.id) + '</span>' +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  // ---------------- 到站数据 ----------------
 
   function setLive(ok){
     els.liveDot.classList.toggle("err", !ok);
@@ -84,10 +222,10 @@
     if(pollTimer) clearTimeout(pollTimer);
     if(userTriggered){
       els.refreshBtn.classList.add("spinning");
-      els.state && (els.board.innerHTML = '<div class="state" id="state">A carregar horários…</div>');
+      els.board.innerHTML = '<div class="state">A carregar horários…</div>';
     }
 
-    var stopId = els.select.value;
+    var stopId = currentStop.id;
 
     fetch(API_BASE + "/pips/estimates", {
       method: "POST",
@@ -148,13 +286,9 @@
   }
 
   // ---- 终点/途经解析:同一站台常有多条线路,各自开往完全不同的方向
-  // (比如往Cacilhas、往里斯本Sete Rios的车,可能根本不经过你要去的Coina)。
+  // (比如往Cacilhas、往里斯本Sete Rios的车,可能根本不经过你要去的目标站)。
   // 用 pattern 的完整路径(而不只是终点)判断某班车是否真的会到你配置的目标站。 ----
   var patternCache = {}; // patternId -> { terminusId, pathIds } | null(请求失败)
-
-  function currentTarget(){
-    return STOP_TARGETS[els.select.value] || null;
-  }
 
   function resolveTermini(){
     var rows = els.board.querySelectorAll(".row[data-pattern]");

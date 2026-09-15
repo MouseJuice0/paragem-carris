@@ -31,8 +31,30 @@
     </div>
   </div>
 
-  <div class="picker">
-    <select id="stopSelect" aria-label="Escolher paragem"></select>
+  <div class="stop-bar">
+    <button class="stop-current" id="stopCurrentBtn" type="button">
+      <div class="stop-current-text">
+        <span class="stop-current-name" id="stopCurrentName">—</span>
+        <span class="stop-current-id" id="stopCurrentIdLabel"></span>
+      </div>
+      <span class="chev">▾</span>
+    </button>
+  </div>
+
+  <div class="target-row">
+    <button class="target-chip" id="targetChipBtn" type="button"></button>
+    <button class="target-clear" id="targetClearBtn" type="button" aria-label="Remover destino" hidden>✕</button>
+  </div>
+
+  <div class="search-overlay" id="searchOverlay" hidden>
+    <div class="search-panel">
+      <div class="search-panel-head">
+        <input id="searchInput" type="text" inputmode="search" autocomplete="off" placeholder="Procurar paragem por nome…">
+        <button class="search-close" id="searchCloseBtn" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <div class="search-hint" id="searchHint"></div>
+      <div class="search-list" id="searchList"></div>
+    </div>
   </div>
 
   <div class="board" id="board">
@@ -50,7 +72,7 @@
   </div>
 
   <div class="note">
-    Demo · paragem de teste: <b>#150009</b> (sentido Coina) → <b>Coina (Estação) #142335</b> · <b>{{n}} paragens</b> pré-carregadas · dados oficiais da API da Carris Metropolitana · cada linha mostra se realmente chega a Coina, não só o nome do letreiro
+    Pesquisa entre todas as paragens da Carris Metropolitana · toque na paragem para trocar, ou em "definir destino" para saber se cada carro passa mesmo por onde você vai
   </div>
 
 <script src="lib.js"></script>

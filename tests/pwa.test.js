@@ -73,6 +73,7 @@ test("核心App壳文件都被加入了离线缓存清单(防止忘记加新文�
   const list = readShellFiles();
   const mustHave = [
     "./index.html", "./style.css", "./lib.js", "./app.js", "./manifest.json",
+    "./stops-index.json",
     "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png"
   ];
   mustHave.forEach((f) => assert.ok(list.includes(f), "核心文件没有加入离线缓存清单: " + f));
