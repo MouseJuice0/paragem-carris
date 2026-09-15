@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Paragem · Quinta do Conde</title>
+
+<!-- PWA: manifest + theme color -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d10">
+
+<!-- iOS Safari 不完全依赖 manifest,需要这几个标签才能正确以全屏App方式启动 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Paragem">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="header">
+    <div class="brand">
+      <div class="place">Quinta do Conde</div>
+      <div class="sub">CARRIS METROPOLITANA · TEMPO REAL</div>
+    </div>
+    <div class="live-pill">
+      <span class="live-dot" id="liveDot"></span>
+      <span id="liveLabel">ligado</span>
+    </div>
+  </div>
+
+  <div class="picker">
+    <select id="stopSelect" aria-label="Escolher paragem"></select>
+  </div>
+
+  <div class="board" id="board">
+    <div class="state" id="state">A carregar horários…</div>
+  </div>
+
+  <div class="footer">
+    <span id="updatedAt">—</span>
+    <button class="refresh-btn" id="refreshBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/>
+      </svg>
+      atualizar
+    </button>
+  </div>
+
+  <div class="note">
+    Demo · paragem de teste: <b>#150009</b> (sentido Coina) → <b>Coina (Estação) #142335</b> · <b>{{n}} paragens</b> pré-carregadas · dados oficiais da API da Carris Metropolitana · cada linha mostra se realmente chega a Coina, não só o nome do letreiro
+  </div>
+
+<script src="lib.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
