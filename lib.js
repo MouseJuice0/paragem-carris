@@ -162,6 +162,55 @@
     return null;
   }
 
+  /**
+   * 两个经纬度之间的直线距离(公里),用于"附近站点"排序。
+   */
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    var R = 6371;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  /**
+   * 按离给定坐标的距离,把站点索引排序,最多返回 limit 条,每条附带 distanceKm。
+   * 用户不需要知道站名,只要愿意分享定位就能找到站——这是给"记不住站名"场景用的。
+   * @param {Array<{id,name,lat,lon}>} index
+   * @param {number} lat
+   * @param {number} lon
+   * @param {number} [limit=20]
+   */
+  function sortStopsByDistance(index, lat, lon, limit) {
+    limit = limit || 20;
+    if (!Array.isArray(index)) return [];
+    return index
+      .map(function (s) {
+        return Object.assign({}, s, { distanceKm: haversineKm(lat, lon, s.lat, s.lon) });
+      })
+      .sort(function (a, b) { return a.distanceKm - b.distanceKm; })
+      .slice(0, limit);
+  }
+
+  /**
+   * 把fetch失败的错误信息,归类成用户能看懂的解释。
+   * 目的:HTTP 5xx明确是官方服务器自己的问题,不该让用户以为是App坏了。
+   * @param {string} message - 形如 "HTTP 500" 或其他 Error.message
+   */
+  function classifyFetchError(message) {
+    var isServerError = /^HTTP 5\d\d$/.test(String(message || ""));
+    return {
+      isServerError: isServerError,
+      explanation: isServerError
+        ? "O serviço oficial da Carris Metropolitana parece estar em baixo neste momento — não é um problema desta app. Tente novamente daqui a pouco."
+        : "Verifique a ligação à internet e tente novamente."
+    };
+  }
+
   return {
     filterAndSortEstimates: filterAndSortEstimates,
     formatEta: formatEta,
@@ -172,6 +221,9 @@
     safeParseJSON: safeParseJSON,
     upsertRecent: upsertRecent,
     resolveInitialStop: resolveInitialStop,
-    resolveTarget: resolveTarget
+    resolveTarget: resolveTarget,
+    haversineKm: haversineKm,
+    sortStopsByDistance: sortStopsByDistance,
+    classifyFetchError: classifyFetchError
   };
 });

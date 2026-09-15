@@ -203,6 +203,19 @@
     padding:6px 8px;
     cursor:pointer;
   }
+  .nearby-btn{
+    margin: 10px 14px 0;
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    cursor:pointer;
+    flex: 0 0 auto;
+  }
+  .nearby-btn:active{ background: rgba(255,176,32,0.08); }
   .search-hint{
     padding: 8px 14px 0;
     font-size: 11px;

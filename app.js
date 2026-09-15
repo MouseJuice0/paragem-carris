@@ -39,6 +39,7 @@
     searchOverlay: document.getElementById("searchOverlay"),
     searchInput: document.getElementById("searchInput"),
     searchCloseBtn: document.getElementById("searchCloseBtn"),
+    nearbyBtn: document.getElementById("nearbyBtn"),
     searchHint: document.getElementById("searchHint"),
     searchList: document.getElementById("searchList")
   };
@@ -95,6 +96,7 @@
     els.searchInput.addEventListener("input", function(){
       renderSearchResults(els.searchInput.value);
     });
+    els.nearbyBtn.addEventListener("click", useMyLocation);
     els.searchList.addEventListener("click", function(e){
       var row = e.target.closest(".search-row");
       if(!row) return;
@@ -187,7 +189,7 @@
 
     if(!q){
       list = loadRecents();
-      els.searchHint.textContent = list.length ? "recentes" : "escreva para procurar entre " + (STOPS_INDEX ? STOPS_INDEX.length : "milhares de") + " paragens";
+      els.searchHint.textContent = list.length ? "recentes" : "escreva para procurar entre " + (STOPS_INDEX ? STOPS_INDEX.length : "milhares de") + " paragens, ou use a localização";
     } else if(!STOPS_INDEX){
       list = [];
       els.searchHint.textContent = "a carregar índice de paragens…";
@@ -196,16 +198,51 @@
       els.searchHint.textContent = list.length + " resultado(s)";
     }
 
+    renderStopRows(list.map(function(s){ return { id: s.id, name: s.name, meta: "#" + s.id }; }));
+  }
+
+  function useMyLocation(){
+    if(!("geolocation" in navigator)){
+      els.searchHint.textContent = "este aparelho não suporta localização";
+      return;
+    }
+    els.searchHint.textContent = "a obter a sua localização…";
+    els.searchList.innerHTML = "";
+
+    navigator.geolocation.getCurrentPosition(
+      function(pos){
+        if(!STOPS_INDEX){
+          els.searchHint.textContent = "índice de paragens ainda a carregar, tente outra vez em instantes";
+          return;
+        }
+        var nearby = ParagemLib.sortStopsByDistance(STOPS_INDEX, pos.coords.latitude, pos.coords.longitude, 20);
+        els.searchHint.textContent = "mais perto de si";
+        renderStopRows(nearby.map(function(s){
+          return { id: s.id, name: s.name, meta: formatDistance(s.distanceKm) };
+        }));
+      },
+      function(err){
+        els.searchHint.textContent = "não foi possível obter localização (" + (err && err.message ? err.message : "permissão negada") + ")";
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  }
+
+  function formatDistance(km){
+    if(km < 1) return Math.round(km * 1000) + "m";
+    return km.toFixed(1) + "km";
+  }
+
+  function renderStopRows(list){
     if(list.length === 0){
       els.searchList.innerHTML = '<div class="search-empty">Sem paragens encontradas.</div>';
       return;
     }
-
     els.searchList.innerHTML = list.map(function(s){
       return (
         '<div class="search-row" data-id="' + escapeHtml(s.id) + '" data-name="' + escapeHtml(s.name) + '">' +
           '<span class="search-row-name">' + escapeHtml(s.name) + '</span>' +
-          '<span class="search-row-meta">#' + escapeHtml(s.id) + '</span>' +
+          '<span class="search-row-meta">' + escapeHtml(s.meta) + '</span>' +
         '</div>'
       );
     }).join("");
@@ -254,9 +291,11 @@
   }
 
   function renderError(err){
+    var msg = err && err.message ? err.message : "erro de rede";
+    var info = ParagemLib.classifyFetchError(msg);
     els.board.innerHTML =
       '<div class="state error">Não foi possível obter os horários.<br>' +
-      '<span style="color:var(--muted); font-size:12px;">' + (err && err.message ? err.message : "erro de rede") + '</span>' +
+      '<span style="color:var(--muted); font-size:12px;">' + escapeHtml(info.explanation) + ' (' + escapeHtml(msg) + ')</span>' +
       '<div><button class="retry-btn" onclick="window.__retry()">Tentar novamente</button></div></div>';
     window.__retry = function(){ loadArrivals(true); };
   }
